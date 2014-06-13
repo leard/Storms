@@ -1,0 +1,130 @@
+# Ttile
+
+## Synopsis
+
+Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?  
+
+Across the United States, which types of events have the greatest economic consequences?  
+
+## Load and Processing the Data
+
+Load the libraries for this analysis.
+```{r}
+library(ggplot2)
+library(chron)
+library(stringr)
+```
+
+Verify if dataset exists.
+```{r}
+if(!file.exists("./storm.csv.bz2")){
+    val<-download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",
+                  "storm.csv.bz2")
+    print(val)
+    if(val != 0){
+        stop("Failure on download of the file")
+    }
+}
+```
+
+Download Documentation.
+```{r}
+if(!file.exists("./stormDoc.pdf")){
+    download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf",
+                  "stormDoc.pdf")
+}
+if(!file.exists("./faqDoc.pdf")){
+    download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf", "faqDoc.pdf")
+}
+```
+
+Unpack and Read the dataset.
+```{r loaddata, cache=TRUE}
+if(file.exists("./storm.csv.bz2")){
+    stormData<-read.csv(bzfile("./storm.csv.bz2"), na.strings=c("", "?"))    
+}else{
+    stop("The dataset not exists")
+}
+```
+
+After read, we check the first few rows (there are 902,297 rows) in this dataset.
+```{r checkdata, cache=TRUE}
+dim(stormData)
+
+head(stormData)
+```
+
+Formatting names and trim the rows values in the dataset.
+```{r tidy, cache=TRUE}
+#Set the names for the R standard
+names(stormData)<- make.names(names(stormData), allow_=F)
+
+#removing space values
+for(i in 1:dim(stormData)[2]){
+    stormData[,i]<-str_trim(stormData[,i])
+}
+
+```
+
+The column we are interested in is the EVTYPE. Here we print the quantity of unique values and NA's.
+```{r viewData, cache=TRUE}
+print(length(unique(stormData$EVTYPE)))
+
+print(sort(unique(stormData$EVTYPE)))
+
+print(length(which(is.na(stormData$EVTYPE))))
+
+```
+
+Set the values from EVTYPE column to upper-case.  Here we print the quantity of unique values
+```{r eventMan, cache=TRUE}
+stormData$EVTYPE<-toupper(stormData$EVTYPE)
+
+print(length(unique(stormData$EVTYPE)))
+
+print(sort(unique(stormData$EVTYPE)))
+
+
+```
+
+Filtering the accepted values. Here we print the quantity, unique and excluded values
+```{r, cache=TRUE}
+allowEvents<-c("Astronomical Low Tide", "Avalanche", "Blizzard", "Coastal Flood", "Cold/Wind Chill",
+               "Debris Flow", "Dense Fog", "Dense Smoke", "Drought", "Dust Devil", "Dust Storm",
+               "Excessive Heat", "Extreme Cold/Wind Chill", "Flash Flood", "Flood", "Frost/Freeze",
+               "Funnel Cloud", "Freezing Fog", "Hail", "Heat", "Heavy Rain", "Heavy Snow", "High Surf",
+               "High Wind", "Hurricane (Typhoon)", "Ice Storm", "Lake-Effect Snow", "Lakeshore Flood",
+               "Lightning", "Marine Hail", "Marine High Wind", "Marine Strong Wind", "Marine Thunderstorm Wind",
+               "Rip Current", "Seiche", "Sleet", "Storm Surge/Tide", "Strong Wind", "Thunderstorm Wind",
+               "Tornado", "Tropical Depression", "Tropical Storm", "Tsunami", "Volcanic Ash", "Waterspout",
+               "Wildfire", "Winter Storm", "Winter Weather")
+
+allowEvents<-toupper(allowEvents)
+print(length(unique(allowEvents)))
+
+allowValues<-stormData$EVTYPE[stormData$EVTYPE %in% allowEvents]
+
+print(length(unique(allowValues)))
+print(unique(allowValues))
+
+print(allowEvents[ ! (allowEvents %in% allowValues) ])
+
+```
+
+As can be seen, some of the values are not acceptable (view the instruction service document from NOOA, pg 17, cap 2.1). So, here the acceptable values will be set, and the unacceptable values will be coerced to NA value.
+
+```{r, cache=TRUE}
+stormData$EVTYPE2<-factor(stormData$EVTYPE, labels=allowEvents, levels=allowEvents)
+
+print(length(which(is.na(stormData$EVTYPE2))))
+
+table(stormData$EVTYPE)
+table(stormData$EVTYPE2)
+```
+
+
+## Results  
+
+
+## Conclusion
+
