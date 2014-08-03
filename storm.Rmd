@@ -1,18 +1,27 @@
-# Ttile
+---
+output:
+  html_document:
+    fig_caption: yes
+---
+# Exploring the NOOA storm database: A temporal analysis of human casualties and property damage in 10 U.S cities
 
 ## Synopsis
 
-Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?  
-
-Across the United States, which types of events have the greatest economic consequences?  
-
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. The results were affected by the large amount of fields that were outside of the specification adopted by the NOOA. Furthermore, it is possible have an ideia of the impact, even underestimated, in the human and property damages. It is possible observes that the Tornado event causes more damages, fatalities and injuries, that the other events. Moreover, the events that caused more casualties are concentred in the Texas and Illinois states. It is also observes, that the Flood and Tornado events produces the greatest economic loss in relation to the other events.
+  
 ## Load and Processing the Data
 
 Load the libraries for this analysis.
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(ggplot2)
 library(chron)
 library(stringr)
+library(lubridate)
+library(grid)
+library(gridExtra)
+library(devtools)
+library(plotflow)
+library(plyr)
 ```
 
 Verify if dataset exists.
@@ -47,12 +56,6 @@ if(file.exists("./storm.csv.bz2")){
 }
 ```
 
-After read, we check the first few rows (there are 902,297 rows) in this dataset.
-```{r checkdata, cache=TRUE}
-dim(stormData)
-
-head(stormData)
-```
 
 Formatting names and trim the rows values in the dataset.
 ```{r tidy, cache=TRUE}
@@ -66,28 +69,33 @@ for(i in 1:dim(stormData)[2]){
 
 ```
 
-The column we are interested in is the EVTYPE. Here we print the quantity of unique values and NA's.
+After read, we check the first few rows (there are 902,297 rows) in this dataset.
+```{r checkdata, cache=TRUE}
+dim(stormData)
+
+head(stormData)
+summary(stormData)
+```
+
+The column we are interested in is the EVTYPE, relative to Event type. Here we print the quantity of unique values and NA's.
 ```{r viewData, cache=TRUE}
 print(length(unique(stormData$EVTYPE)))
-
-print(sort(unique(stormData$EVTYPE)))
 
 print(length(which(is.na(stormData$EVTYPE))))
 
 ```
 
-Set the values from EVTYPE column to upper-case.  Here we print the quantity of unique values
+Set the values from EVTYPE, PROPDMGEXP (Costs of property damage) and CROPDMGEXP (Costs of crop damage) columns to upper-case.  Here we print the quantity of unique values in EVTYPE comlumn
 ```{r eventMan, cache=TRUE}
 stormData$EVTYPE<-toupper(stormData$EVTYPE)
+stormData$PROPDMGEXP<-toupper(stormData$PROPDMGEXP)
+stormData$CROPDMGEXP<-toupper(stormData$CROPDMGEXP)
 
 print(length(unique(stormData$EVTYPE)))
 
-print(sort(unique(stormData$EVTYPE)))
-
-
 ```
 
-Filtering the accepted values. Here we print the quantity, unique and excluded values
+Filtering the accepted values. Here we print the unique and excluded acceptable values
 ```{r, cache=TRUE}
 allowEvents<-c("Astronomical Low Tide", "Avalanche", "Blizzard", "Coastal Flood", "Cold/Wind Chill",
                "Debris Flow", "Dense Fog", "Dense Smoke", "Drought", "Dust Devil", "Dust Storm",
@@ -99,32 +107,217 @@ allowEvents<-c("Astronomical Low Tide", "Avalanche", "Blizzard", "Coastal Flood"
                "Tornado", "Tropical Depression", "Tropical Storm", "Tsunami", "Volcanic Ash", "Waterspout",
                "Wildfire", "Winter Storm", "Winter Weather")
 
+allowExp<-c("K", "M", "B")
+
 allowEvents<-toupper(allowEvents)
-print(length(unique(allowEvents)))
+#print(length(unique(allowEvents)))
 
 allowValues<-stormData$EVTYPE[stormData$EVTYPE %in% allowEvents]
 
-print(length(unique(allowValues)))
+#print(length(unique(allowValues)))
 print(unique(allowValues))
 
 print(allowEvents[ ! (allowEvents %in% allowValues) ])
 
 ```
 
-As can be seen, some of the values are not acceptable (view the instruction service document from NOOA, pg 17, cap 2.1). So, here the acceptable values will be set, and the unacceptable values will be coerced to NA value.
+As can be seen, some of the values are not acceptable (view the instruction service document from NOOA, pg 17, cap 2.1). The total number of acceptable events are `r length(allowEvents)`, and the filtered dataset has a total of `r length(allowValues)` allow values. So, here the acceptable values will be set, and the unacceptable values will be coerced to NA value.
 
 ```{r, cache=TRUE}
+#Set the EVTYPE coerced values
 stormData$EVTYPE2<-factor(stormData$EVTYPE, labels=allowEvents, levels=allowEvents)
 
 print(length(which(is.na(stormData$EVTYPE2))))
 
-table(stormData$EVTYPE)
-table(stormData$EVTYPE2)
+#Set the STATE as factor
+stormData$STATE<-factor(stormData$STATE)
+
+#Set the PROPDMGEXP and CROPDMGEXP coerced values
+stormData$PROPDMGEXP<-factor(toupper(stormData$PROPDMGEXP), labels=allowExp, levels=allowExp)
+stormData$CROPDMGEXP<-factor(toupper(stormData$CROPDMGEXP), labels=allowExp, levels=allowExp)
+
+#Convert to numeric
+stormData$PROPDMG<-as.numeric(stormData$PROPDMG)
+stormData$CROPDMG<-as.numeric(stormData$CROPDMG)
+stormData$INJURIES<-as.numeric(stormData$INJURIES)
+stormData$FATALITIES<-as.numeric(stormData$FATALITIES)
+
+
+#Set the real values from PROPDMG and CROPDMG columns, based in the PROPDMGEXP and CROPDMGEXP columns, respectively.
+stormData$PROPDMG[stormData$PROPDMGEXP == "K"] <- prod(stormData$PROPDMG[stormData$PROPDMGEXP == "K"], 1e+03, na.rm=T)
+stormData$PROPDMG[stormData$PROPDMGEXP == "M"] <- prod(stormData$PROPDMG[stormData$PROPDMGEXP == "M"], 1e+06, na.rm=T)
+stormData$PROPDMG[stormData$PROPDMGEXP == "B"] <- prod(stormData$PROPDMG[stormData$PROPDMGEXP == "B"], 1e+09, na.rm=T)
+
+stormData$CROPDMG[stormData$CROPDMGEXP == "K"] <- prod(stormData$CROPDMG[stormData$CROPDMGEXP == "K"], 1e+03, na.rm=T)
+stormData$CROPDMG[stormData$CROPDMGEXP == "M"] <- prod(stormData$CROPDMG[stormData$CROPDMGEXP == "M"], 1e+06, na.rm=T)
+stormData$CROPDMG[stormData$CROPDMGEXP == "B"] <- prod(stormData$CROPDMG[stormData$CROPDMGEXP == "B"], 1e+09, na.rm=T)
+
+```
+
+Grouping the data by event type, show the summary and processing the data of the top 10 cities of U.S
+```{r, cache=TRUE}
+
+#deathst<-aggregate(FATALITIES~EVTYPE2, FUN=sum, data=stormData)
+#injuriesst<-aggregate(INJURIES~EVTYPE2, FUN=sum, data=stormData)
+#bothst <- merge(deathst, injuriesst, id = "EVTYPE2")
+
+#casualty calc
+stsum<-aggregate(cbind(TOTALS=INJURIES+FATALITIES, deparse.level = 2 )~EVTYPE2, 
+                 FUN=sum, data=stormData)
+
+attach(stsum)
+orderst <- stsum[order(-TOTALS), ]
+detach(stsum)
+
+st10<-as.data.frame(orderst[1:10, "EVTYPE2"])
+names(st10)[1]<-"EVTYPE"
+
+top10st<-stormData[stormData$EVTYPE2 %in% st10$EVTYPE, ]
+head(top10st)
+summary(top10st)
+YEAR<-with(top10st, year(as.Date(as.character(BGN.DATE), format="%m/%d/%Y")))
+
+stsum<-aggregate(cbind(INJURIES, FATALITIES, PROPDMG, CROPDMG, deparse.level = 2 )~EVTYPE2+YEAR+STATE, 
+                 FUN=sum, data=top10st)
+
+statesum<-aggregate(cbind(INJURIES, FATALITIES, PROPDMG, CROPDMG, deparse.level = 2 )~STATE, 
+                 FUN=sum, data=stsum)
+
+#Costs calc
+stcostsum<-aggregate(cbind(TOTALS=PROPDMG+CROPDMG, deparse.level = 2 )~EVTYPE2, 
+                 FUN=sum, data=stormData)
+
+attach(stcostsum)
+orderst <- stcostsum[order(-TOTALS), ]
+detach(stcostsum)
+
+st10c<-as.data.frame(orderst[1:10, "EVTYPE2"])
+names(st10c)[1]<-"EVTYPE"
+
+top10stc<-stormData[stormData$EVTYPE2 %in% st10c$EVTYPE, ]
+YEAR<-with(top10stc, year(as.Date(as.character(BGN.DATE), format="%m/%d/%Y")))
+
+stcostsum<-aggregate(cbind(PROPDMG, CROPDMG, deparse.level = 2 )~EVTYPE2+YEAR, 
+                 FUN=sum, data=top10stc)
+
+eventcostsum<-aggregate(cbind(PROPDMG, CROPDMG, deparse.level = 2 )~EVTYPE2, 
+                 FUN=sum, data=top10stc)
+
+
 ```
 
 
-## Results  
+## Results
+
+The results were affected by the large amount of fields that were outside of the specification adopted by the NOOA, and thus, this analysis is understimated, do not reflecting the real ocurred situation . Furthermore, it is possible have an ideia of the impact, even underestimated, in the human and property damages.
+
+### Counts
+
+By analyzing the weather events, the hail event appears more times, as the Figure 1 graph.
+```{r plot1, fig.align='center',fig.width=8}
+
+#eventCount<-count( stormData, "EVTYPE2")
+
+#EventSummary <- ddply(stormData, .(EVTYPE2), summarise, N=length(result))
 
 
-## Conclusion
+eventOrder <- aggregate(stormData["EVTYPE2"], 
+                        by=stormData["EVTYPE2"], 
+                        FUN=length)
+names(eventOrder)[2]<-"TOTALS"
+eventOrder <- eventOrder[order(-eventOrder$TOTALS), ]
+
+evt10<-as.data.frame(eventOrder[1:10,c(1,2)])
+evt10$EVTYPE2<-factor(evt10$EVTYPE2, levels=unique(evt10$EVTYPE2[order(-evt10$TOTALS)]))
+
+plot1<-ggplot( evt10, aes(x=EVTYPE2, y=TOTALS))+
+    geom_bar(stat="identity") + 
+    xlab("Event") + 
+    ylab("Number of events") +
+    ggtitle("Figure 1\n")+
+    coord_flip()
+
+plot1
+```
+
+### Health Analysis
+It is possible observes, in the Figure 2, that the Tornado event causes more damages, fatalities and injuries, that the other events. Also it is possible observes that the data set from Tornado event is more uniform and complete along the years. 
+
+The events that caused more casualties (damage and death), are concentred in the Texas and Illinois states.
+
+```{r plot2, fig.align='center',fig.width=16, fig.height=16}
+plot1<-qplot(YEAR, INJURIES, geom="line", data=stsum, stat="summary", fun.y = "sum")
+plot1<-plot1+facet_wrap(~EVTYPE2, nrow=2, scales="free") +
+    xlab("Year") + 
+    ylab("Total Injuries") +
+    ggtitle("Total injuries by Event\n")
+
+plot2<-qplot(YEAR, FATALITIES, geom="line", data=stsum, stat="summary", fun.y = "sum")
+plot2<-plot2+facet_wrap(~EVTYPE2, nrow=2, scales="free")+
+    xlab("Year") + 
+    ylab("Total fatalities") +
+    ggtitle("Total fatalities by event\n")
+
+#grid.arrange(plot1, plot2, nrow = 2, main = "Main title")
+
+statesum$STATE<-factor(statesum$STATE, levels=unique(statesum$STATE[order(-statesum$INJURIES)]))
+temp<-statesum[order(-statesum$INJURIES), ]
+top10<-temp[1:10,]
+plot3<-ggplot( top10, aes(x=STATE, y=INJURIES))+
+    geom_bar(stat = "identity")+
+    xlab("State") + 
+    ylab("Total Injuries") +
+    ggtitle("Total injuries by state\n")
+
+statesum$STATE<-factor(statesum$STATE, levels=unique(statesum$STATE[order(-statesum$FATALITIES)]))
+temp<-statesum[order(-statesum$FATALITIES), ]
+top10<-temp[1:10,]
+plot4<-ggplot( top10, aes(x=STATE, y=FATALITIES))+
+    geom_bar(stat = "identity")+
+    xlab("State") + 
+    ylab("Total fatalities") +
+    ggtitle("Total fatalities by state\n")
+
+grid.arrange(plot1, plot2, plot3, plot4, 
+             nrow = 4, 
+             main = textGrob("Figure 2",                              
+                             gp=gpar(fontsize=24, lty = "solid", lwd=3, cex=1)) )
+
+
+```
+
+
+
+### Economical Analisys
+
+It is possible observes, in the Figure 3, that the Flood and Tornado events produces the greatest economic loss in relation to the other events. Also, it is possible observes that in the data set from all events about the damage costs, are missing records, and therefore underestimates the losses caused by these events.
+
+```{r plot3, fig.align='center',fig.width=16, fig.height=10}
+
+eventcostsum$EVTYPE2<-factor(eventcostsum$EVTYPE2, levels=unique(eventcostsum$EVTYPE2[order(-eventcostsum$PROPDMG)]))
+temp<-eventcostsum[order(-eventcostsum$PROPDMG), ]
+top10<-temp[1:10,]
+
+plot1<-ggplot( top10, aes(x=EVTYPE2, y=(PROPDMG)))+
+    geom_bar(stat = "identity")+
+    xlab("Event") + 
+    ylab("Total Costs in Trillion US$") +
+    ggtitle("Total costs by event\n")+
+    coord_flip() +
+    scale_y_continuous(labels=function(x){x/10^12})
+
+
+plot2<-qplot(YEAR, PROPDMG, geom="bar", data=stcostsum, stat="summary", fun.y = "sum")
+plot2<-plot2+facet_wrap(~EVTYPE2, nrow=2, scales="free")+
+    xlab("Year") + 
+    ylab("Total Costs in Trillion US$") +
+    ggtitle("\nTotal injuries by year\n") +
+    scale_y_continuous(labels=function(x){x/10^12})
+
+grid.arrange(plot1, plot2, nrow = 2, 
+             main = textGrob("Figure 3", 
+                             gp=gpar(fontsize=24, lty = "solid", lwd=3, cex=1)) )
+
+
+```
 
